@@ -1028,6 +1028,13 @@ void SPU::BufferAudio()
     blip_read_samples(BlipRight, temp + 1, avail, true);
 
     Platform::Mutex_Lock(AudioLock);
+    const int fifoLevel = GetOutputSizeLocked();
+    const int usableCapacity = OutputBufferSize - 1;
+    const int overwrittenFrames = fifoLevel + avail - usableCapacity;
+    OutputMetrics.StereoFramesProduced += static_cast<u64>(avail);
+    if (overwrittenFrames > 0)
+        OutputMetrics.StereoFramesOverwritten += static_cast<u64>(overwrittenFrames);
+
     for (int i = 0; i < avail * 2; i += 2)
     {
         OutputBuffer[OutputBufferWritePos++] = temp[i];
@@ -1042,6 +1049,10 @@ void SPU::BufferAudio()
             OutputBufferReadPos &= ((2*OutputBufferSize)-1);
         }
     }
+
+    const u64 newFifoLevel = static_cast<u64>(GetOutputSizeLocked());
+    if (newFifoLevel > OutputMetrics.MaxFifoLevel)
+        OutputMetrics.MaxFifoLevel = newFifoLevel;
     Platform::Mutex_Unlock(AudioLock);
 }
 
@@ -1095,17 +1106,40 @@ void SPU::InitOutput()
 int SPU::GetOutputSize() const
 {
     Platform::Mutex_Lock(AudioLock);
+    const int ret = GetOutputSizeLocked();
+    Platform::Mutex_Unlock(AudioLock);
+    return ret;
+}
 
+int SPU::GetOutputSizeLocked() const
+{
     int ret;
     if (OutputBufferWritePos >= OutputBufferReadPos)
         ret = OutputBufferWritePos - OutputBufferReadPos;
     else
         ret = (OutputBufferSize*2) - OutputBufferReadPos + OutputBufferWritePos;
 
-    ret >>= 1;
+    return ret >> 1;
+}
 
+AudioOutputMetrics SPU::GetOutputMetrics() const
+{
+    Platform::Mutex_Lock(AudioLock);
+    AudioOutputMetrics metrics = OutputMetrics;
+    metrics.CurrentFifoLevel = static_cast<u64>(GetOutputSizeLocked());
     Platform::Mutex_Unlock(AudioLock);
-    return ret;
+    return metrics;
+}
+
+AudioOutputMetrics SPU::ResetOutputMetrics()
+{
+    Platform::Mutex_Lock(AudioLock);
+    OutputMetrics = {};
+    OutputMetrics.CurrentFifoLevel = static_cast<u64>(GetOutputSizeLocked());
+    OutputMetrics.MaxFifoLevel = OutputMetrics.CurrentFifoLevel;
+    const AudioOutputMetrics metrics = OutputMetrics;
+    Platform::Mutex_Unlock(AudioLock);
+    return metrics;
 }
 
 void SPU::Sync(bool wait)
@@ -1140,28 +1174,29 @@ void SPU::Sync(bool wait)
 
 int SPU::ReadOutput(s16* data, int samples)
 {
-    Platform::Mutex_Lock(AudioLock);
-    if (OutputBufferReadPos == OutputBufferWritePos)
-    {
-        Platform::Mutex_Unlock(AudioLock);
+    if (samples <= 0)
         return 0;
-    }
 
-    for (int i = 0; i < samples; i++)
+    Platform::Mutex_Lock(AudioLock);
+    OutputMetrics.StereoFramesRequested += static_cast<u64>(samples);
+
+    int framesRead = 0;
+    while (framesRead < samples && OutputBufferReadPos != OutputBufferWritePos)
     {
         *data++ = OutputBuffer[OutputBufferReadPos++];
         *data++ = OutputBuffer[OutputBufferReadPos++];
         OutputBufferReadPos &= ((2*OutputBufferSize)-1);
-
-        if (OutputBufferWritePos == OutputBufferReadPos)
-        {
-            Platform::Mutex_Unlock(AudioLock);
-            return i+1;
-        }
+        framesRead++;
     }
 
+    OutputMetrics.StereoFramesRead += static_cast<u64>(framesRead);
+    if (framesRead == 0)
+        OutputMetrics.FullyUnderfedCallbacks++;
+    else if (framesRead < samples)
+        OutputMetrics.PartiallyUnderfedCallbacks++;
+
     Platform::Mutex_Unlock(AudioLock);
-    return samples;
+    return framesRead;
 }
 
 void SPU::SetOutputSampleRate(double rate)

@@ -52,6 +52,18 @@ enum class AudioInterpolation
     SNESGaussian
 };
 
+struct AudioOutputMetrics
+{
+    u64 StereoFramesProduced = 0;
+    u64 StereoFramesRead = 0;
+    u64 StereoFramesOverwritten = 0;
+    u64 StereoFramesRequested = 0;
+    u64 FullyUnderfedCallbacks = 0;
+    u64 PartiallyUnderfedCallbacks = 0;
+    u64 CurrentFifoLevel = 0;
+    u64 MaxFifoLevel = 0;
+};
+
 class SPUChannel
 {
 public:
@@ -251,6 +263,8 @@ public:
     void DrainOutput();
     void InitOutput();
     int GetOutputSize() const;
+    AudioOutputMetrics GetOutputMetrics() const;
+    AudioOutputMetrics ResetOutputMetrics();
     void Sync(bool wait);
     int ReadOutput(s16* data, int samples);
     void SetOutputSampleRate(double rate);
@@ -264,6 +278,8 @@ public:
     void Write32(u32 addr, u32 val);
 
 private:
+    int GetOutputSizeLocked() const;
+
     u32 OutputBufferSize = 0;
     double OutputSampleRate;
     double OutputSkew = 1.0;
@@ -281,6 +297,7 @@ private:
     u32 MixInterval;
 
     Platform::Mutex* AudioLock;
+    AudioOutputMetrics OutputMetrics;
 
     u16 Cnt = 0;
     u8 MasterVolume = 0;
