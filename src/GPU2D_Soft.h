@@ -38,6 +38,15 @@ public:
     void VBlankEnd(Unit* unitA, Unit* unitB) override;
 private:
     melonDS::GPU& GPU;
+
+    enum
+    {
+        OBJ_BGPrioMask = (0x3<<16),
+        OBJ_IsOpaque = (1<<18),
+        OBJ_IsSprite = (1<<19),
+        OBJ_Mosaic = (1<<20),
+    };
+
     alignas(8) u32 BGOBJLine[256*3];
     u32* _3DLine;
 
@@ -138,6 +147,7 @@ private:
     void ApplySpriteMosaicX();
     template<DrawPixel drawPixel>
     void InterleaveSprites(u32 prio);
+    template<bool window> void DrawSpritePixel(int color, u32 pixelattr, s32 xpos);
     template<bool window> void DrawSprite_Rotscale(u32 num, u32 boundwidth, u32 boundheight, u32 width, u32 height, s32 xpos, s32 ypos);
     template<bool window> void DrawSprite_Normal(u32 num, u32 width, u32 height, s32 xpos, s32 ypos);
 
