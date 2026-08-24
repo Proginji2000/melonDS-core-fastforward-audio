@@ -1017,7 +1017,22 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
                 color = bgvram[(pixelsaddr + tilexoff) & bgvrammask];
 
                 if (color)
-                    drawPixel(&BGOBJLine[i], curpal[color], 0x01000000<<bgnum);
+                {
+                    if constexpr (drawPixel == DrawPixel_Normal)
+                    {
+                        u16 pixel = curpal[color];
+                        u8 r = (pixel & 0x001F) << 1;
+                        u8 g = (pixel & 0x03E0) >> 4;
+                        u8 b = (pixel & 0x7C00) >> 9;
+
+                        BGOBJLine[i+256] = BGOBJLine[i];
+                        BGOBJLine[i] = r | (g << 8) | (b << 16) | (0x01000000<<bgnum);
+                    }
+                    else
+                    {
+                        drawPixel(&BGOBJLine[i], curpal[color], 0x01000000<<bgnum);
+                    }
+                }
             }
 
             xoff++;
@@ -1070,7 +1085,22 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
                 }
 
                 if (color)
-                    drawPixel(&BGOBJLine[i], curpal[color], 0x01000000<<bgnum);
+                {
+                    if constexpr (drawPixel == DrawPixel_Normal)
+                    {
+                        u16 pixel = curpal[color];
+                        u8 r = (pixel & 0x001F) << 1;
+                        u8 g = (pixel & 0x03E0) >> 4;
+                        u8 b = (pixel & 0x7C00) >> 9;
+
+                        BGOBJLine[i+256] = BGOBJLine[i];
+                        BGOBJLine[i] = r | (g << 8) | (b << 16) | (0x01000000<<bgnum);
+                    }
+                    else
+                    {
+                        drawPixel(&BGOBJLine[i], curpal[color], 0x01000000<<bgnum);
+                    }
+                }
             }
 
             xoff++;
