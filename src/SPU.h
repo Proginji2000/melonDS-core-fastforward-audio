@@ -21,6 +21,8 @@
 
 #include "Savestate.h"
 #include "Platform.h"
+#include <atomic>
+#include <mutex>
 
 struct blip_t;
 
@@ -62,7 +64,25 @@ struct AudioOutputMetrics
     u64 PartiallyUnderfedCallbacks = 0;
     u64 CurrentFifoLevel = 0;
     u64 MaxFifoLevel = 0;
+    u64 DspInputFrames = 0;
+    u64 DspOutputFrames = 0;
+    u64 DspBufferedInputFrames = 0;
+    u64 DspBufferedOutputFrames = 0;
+    u64 DspProcessingTimeUs = 0;
+    u64 DspMaxProcessingTimeUs = 0;
+    u64 DspResets = 0;
+    u64 DspStartupInputFrames = 0;
+    u64 DspFirstOutputDelayUs = 0;
 };
+
+struct AudioOutputProcessorResult
+{
+    int OutputFrames = 0;
+    u64 BufferedInputFrames = 0;
+    u64 BufferedOutputFrames = 0;
+};
+
+using AudioOutputProcessor = AudioOutputProcessorResult (*)(void* context, s16* samples, int frames);
 
 class SPUChannel
 {
@@ -265,6 +285,7 @@ public:
     int GetOutputSize() const;
     AudioOutputMetrics GetOutputMetrics() const;
     AudioOutputMetrics ResetOutputMetrics();
+    void SetOutputProcessor(AudioOutputProcessor processor, void* context);
     void Sync(bool wait);
     int ReadOutput(s16* data, int samples);
     void SetOutputSampleRate(double rate);
@@ -298,6 +319,13 @@ private:
 
     Platform::Mutex* AudioLock;
     AudioOutputMetrics OutputMetrics;
+    std::mutex OutputProcessorLock;
+    std::atomic<bool> OutputProcessorActive {false};
+    AudioOutputProcessor OutputProcessor = nullptr;
+    void* OutputProcessorContext = nullptr;
+    u64 OutputProcessorStartTimeUs = 0;
+    u64 OutputProcessorStartInputFrames = 0;
+    bool OutputProcessorAwaitingFirstOutput = false;
 
     u16 Cnt = 0;
     u8 MasterVolume = 0;

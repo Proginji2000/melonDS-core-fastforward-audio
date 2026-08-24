@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <chrono>
 #include <cmath>
 #include "Platform.h"
 #include "NDS.h"
@@ -34,6 +35,12 @@ namespace melonDS
 {
 using Platform::Log;
 using Platform::LogLevel;
+
+static u64 GetSteadyTimeUs()
+{
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 
 
 // SPU TODO
@@ -1027,15 +1034,54 @@ void SPU::BufferAudio()
     blip_read_samples(BlipLeft, temp, avail, true);
     blip_read_samples(BlipRight, temp + 1, avail, true);
 
+    std::unique_lock<std::mutex> processorLock;
+    bool processed = false;
+    if (OutputProcessorActive.load(std::memory_order_acquire))
+    {
+        processorLock = std::unique_lock<std::mutex>(OutputProcessorLock);
+        processed = OutputProcessor != nullptr;
+    }
+    int outputFrames = avail;
+    AudioOutputProcessorResult processorResult;
+    u64 processingTimeUs = 0;
+    if (processed)
+    {
+        const u64 startTimeUs = GetSteadyTimeUs();
+        processorResult = OutputProcessor(OutputProcessorContext, temp, avail);
+        processingTimeUs = GetSteadyTimeUs() - startTimeUs;
+        outputFrames = processorResult.OutputFrames;
+        if (outputFrames < 0)
+            outputFrames = 0;
+        else if (outputFrames > avail)
+            outputFrames = avail;
+    }
+
     Platform::Mutex_Lock(AudioLock);
     const int fifoLevel = GetOutputSizeLocked();
     const int usableCapacity = OutputBufferSize - 1;
-    const int overwrittenFrames = fifoLevel + avail - usableCapacity;
+    const int overwrittenFrames = fifoLevel + outputFrames - usableCapacity;
     OutputMetrics.StereoFramesProduced += static_cast<u64>(avail);
+    if (processed)
+    {
+        OutputMetrics.DspInputFrames += static_cast<u64>(avail);
+        OutputMetrics.DspOutputFrames += static_cast<u64>(outputFrames);
+        OutputMetrics.DspBufferedInputFrames = processorResult.BufferedInputFrames;
+        OutputMetrics.DspBufferedOutputFrames = processorResult.BufferedOutputFrames;
+        OutputMetrics.DspProcessingTimeUs += processingTimeUs;
+        if (processingTimeUs > OutputMetrics.DspMaxProcessingTimeUs)
+            OutputMetrics.DspMaxProcessingTimeUs = processingTimeUs;
+        if (OutputProcessorAwaitingFirstOutput && outputFrames > 0)
+        {
+            OutputMetrics.DspStartupInputFrames =
+                    OutputMetrics.DspInputFrames - OutputProcessorStartInputFrames;
+            OutputMetrics.DspFirstOutputDelayUs = GetSteadyTimeUs() - OutputProcessorStartTimeUs;
+            OutputProcessorAwaitingFirstOutput = false;
+        }
+    }
     if (overwrittenFrames > 0)
         OutputMetrics.StereoFramesOverwritten += static_cast<u64>(overwrittenFrames);
 
-    for (int i = 0; i < avail * 2; i += 2)
+    for (int i = 0; i < outputFrames * 2; i += 2)
     {
         OutputBuffer[OutputBufferWritePos++] = temp[i];
         OutputBuffer[OutputBufferWritePos++] = temp[i+1];
@@ -1109,6 +1155,31 @@ int SPU::GetOutputSize() const
     const int ret = GetOutputSizeLocked();
     Platform::Mutex_Unlock(AudioLock);
     return ret;
+}
+
+void SPU::SetOutputProcessor(AudioOutputProcessor processor, void* context)
+{
+    std::lock_guard<std::mutex> processorLock(OutputProcessorLock);
+
+    const bool hadProcessor = OutputProcessor != nullptr;
+    OutputProcessor = processor;
+    OutputProcessorContext = context;
+    OutputProcessorStartTimeUs = GetSteadyTimeUs();
+    OutputProcessorAwaitingFirstOutput = processor != nullptr;
+    OutputProcessorActive.store(processor != nullptr, std::memory_order_release);
+
+    Platform::Mutex_Lock(AudioLock);
+    OutputProcessorStartInputFrames = OutputMetrics.DspInputFrames;
+    OutputBufferReadPos = 0;
+    OutputBufferWritePos = 0;
+    if (processor != nullptr)
+    {
+        OutputMetrics.DspBufferedInputFrames = 0;
+        OutputMetrics.DspBufferedOutputFrames = 0;
+    }
+    if (hadProcessor || processor != nullptr)
+        OutputMetrics.DspResets++;
+    Platform::Mutex_Unlock(AudioLock);
 }
 
 int SPU::GetOutputSizeLocked() const
