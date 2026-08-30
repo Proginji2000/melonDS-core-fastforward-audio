@@ -756,11 +756,21 @@ void ARMv4::Execute()
 
     while (NDS.ARM7Timestamp < NDS.ARM7Target)
     {
+        const u32 instrAddr = R[15] - ((CPSR & 0x20) ? 2 : 4);
+#ifdef JIT_ENABLED
+        if constexpr (mode != CPUExecuteMode::JIT)
+#endif
+        {
+            if (NDS.PokemonWhiteAudio.IsHookAddress(instrAddr))
+            {
+                if (NDS.PokemonWhiteAudio.HandleARM7Hook(instrAddr))
+                    CPSR |= 1U << 30;
+            }
+        }
+
 #ifdef JIT_ENABLED
         if constexpr (mode == CPUExecuteMode::JIT)
         {
-            u32 instrAddr = R[15] - ((CPSR&0x20)?2:4);
-
             if ((instrAddr < FastBlockLookupStart || instrAddr >= (FastBlockLookupStart + FastBlockLookupSize))
                 && !NDS.JIT.SetupExecutableRegion(1, instrAddr, FastBlockLookup, FastBlockLookupStart, FastBlockLookupSize))
             {

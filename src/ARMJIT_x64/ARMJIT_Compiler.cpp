@@ -713,6 +713,21 @@ JitBlockEntry Compiler::CompileBlock(ARM* cpu, bool thumb, FetchedInstr instrs[]
 
     RegCache = RegisterCache<Compiler, X64Reg>(this, instrs, instrsCount);
 
+    if (Num == 1 && NDS.PokemonWhiteAudio.IsHookAddress(instrs[0].Addr))
+    {
+        MOV(64, R(ABI_PARAM1), R(RCPU));
+        MOV(32, R(ABI_PARAM2), Imm32(instrs[0].Addr));
+        ABI_CallFunction(PokemonWhiteAudioJITHook);
+        if (NDS.PokemonWhiteAudio.IsGateHookAddress(instrs[0].Addr))
+        {
+            TEST(32, R(RSCRATCH), R(RSCRATCH));
+            FixupBranch noGate = J_CC(CC_Z);
+            OR(32, R(RCPSR), Imm32(1U << 30));
+            CPSRDirty = true;
+            SetJumpTarget(noGate);
+        }
+    }
+
     for (int i = 0; i < instrsCount; i++)
     {
         CurInstr = instrs[i];

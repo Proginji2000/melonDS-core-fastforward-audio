@@ -695,6 +695,20 @@ JitBlockEntry Compiler::CompileBlock(ARM* cpu, bool thumb, FetchedInstr instrs[]
     RegCache = RegisterCache<Compiler, ARM64Reg>(this, instrs, instrsCount, true);
     CPSRDirty = false;
 
+    if (Num == 1 && NDS.PokemonWhiteAudio.IsHookAddress(instrs[0].Addr))
+    {
+        MOV(X0, RCPU);
+        MOVI2R(W1, instrs[0].Addr);
+        QuickCallFunction(X2, PokemonWhiteAudioJITHook);
+        if (NDS.PokemonWhiteAudio.IsGateHookAddress(instrs[0].Addr))
+        {
+            FixupBranch noGate = CBZ(W0);
+            ORRI2R(RCPSR, RCPSR, 1U << 30);
+            CPSRDirty = true;
+            SetJumpTarget(noGate);
+        }
+    }
+
     if (hasMemInstr)
         MOVP2R(RMemBase, Num == 0 ? NDS.JIT.Memory.FastMem9Start : NDS.JIT.Memory.FastMem7Start);
 

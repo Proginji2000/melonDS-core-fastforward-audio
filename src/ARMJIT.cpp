@@ -599,6 +599,9 @@ void ARMJIT::CompileBlock(ARM* cpu) noexcept
 
     do
     {
+        if (i > 0 && cpu->Num == 1 && NDS.PokemonWhiteAudio.IsHookAddress(nextInstrAddr[0]))
+            break;
+
         r15 += thumb ? 2 : 4;
 
         instrs[i].BranchFlags = 0;

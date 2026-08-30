@@ -106,6 +106,7 @@ NDS::NDS(NDSArgs&& args, int type, void* userdata) noexcept :
     AREngine(*this),
     ARM9(*this, args.GDB, args.JIT.has_value()),
     ARM7(*this, args.GDB, args.JIT.has_value()),
+    PokemonWhiteAudio(*this),
 #ifdef GDBSTUB_ENABLED
     EnableGDBStub(args.GDB.has_value()),
 #endif
@@ -508,6 +509,7 @@ void NDS::Reset()
 
     ARM9.Reset();
     ARM7.Reset();
+    PokemonWhiteAudio.ResetRuntime();
 
     CPUStop = 0;
 
@@ -763,6 +765,7 @@ bool NDS::DoSavestate(Savestate* file)
 #ifdef JIT_ENABLED
         JIT.Reset();
 #endif
+        PokemonWhiteAudio.RebuildRuntime();
     }
 
     file->Finish();
@@ -772,10 +775,17 @@ bool NDS::DoSavestate(Savestate* file)
 
 void NDS::SetNDSCart(std::unique_ptr<NDSCart::CartCommon>&& cart)
 {
+    PokemonWhiteAudio.Initialize(cart.get());
     NDSCartSlot.SetCart(std::move(cart));
     // The existing cart will always be ejected;
     // if cart is null, then that's equivalent to ejecting a cart
     // without inserting a new one.
+}
+
+std::unique_ptr<NDSCart::CartCommon> NDS::EjectCart()
+{
+    PokemonWhiteAudio.Initialize(nullptr);
+    return NDSCartSlot.EjectCart();
 }
 
 void NDS::SetNDSSave(const u8* savedata, u32 savelen)

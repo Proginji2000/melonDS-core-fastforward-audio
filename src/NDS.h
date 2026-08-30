@@ -43,6 +43,7 @@
 #include "CRC32.h"
 #include "DMA.h"
 #include "FreeBIOS.h"
+#include "PokemonWhiteAudio.h"
 
 // when touching the main loop/timing code, pls test a lot of shit
 // with this enabled, to make sure it doesn't desync
@@ -314,6 +315,7 @@ public: // TODO: Encapsulate the rest of these members
     melonDS::ARMJIT JIT;
     ARMv5 ARM9;
     ARMv4 ARM7;
+    PokemonWhiteAudioClassifier PokemonWhiteAudio;
     melonDS::SPU SPU;
     melonDS::Mic Mic;
     SPIHost SPI;
@@ -357,7 +359,7 @@ public: // TODO: Encapsulate the rest of these members
     [[nodiscard]] const NDSCart::CartCommon* GetNDSCart() const { return NDSCartSlot.GetCart(); }
     virtual void SetNDSCart(std::unique_ptr<NDSCart::CartCommon>&& cart);
     [[nodiscard]] bool CartInserted() const noexcept { return NDSCartSlot.GetCart() != nullptr; }
-    virtual std::unique_ptr<NDSCart::CartCommon> EjectCart() { return NDSCartSlot.EjectCart(); }
+    virtual std::unique_ptr<NDSCart::CartCommon> EjectCart();
 
     [[nodiscard]] u8* GetNDSSave() { return NDSCartSlot.GetSaveMemory(); }
     [[nodiscard]] const u8* GetNDSSave() const { return NDSCartSlot.GetSaveMemory(); }

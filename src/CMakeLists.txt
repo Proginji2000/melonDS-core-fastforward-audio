@@ -46,6 +46,8 @@ add_library(core STATIC
     NDSCart.cpp
     NDSCartR4.cpp
     Platform.h
+    PokemonWhiteAudio.cpp
+    PokemonWhiteAudio.h
     ROMList.h
     ROMList.cpp
     FreeBIOS.h
@@ -72,6 +74,7 @@ add_library(core STATIC
     fatfs/ffconf.h
 
     sha1/sha1.c
+    teakra/src/makedsp1/sha256.cpp
     tiny-AES-c/aes.c
     xxhash/xxhash.c
 
