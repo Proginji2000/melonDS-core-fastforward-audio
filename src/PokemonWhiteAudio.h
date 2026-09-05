@@ -59,7 +59,7 @@ public:
     void Initialize(const NDSCart::CartCommon* cart);
     void ResetRuntime() noexcept;
     void RebuildRuntime();
-    void SetBgmGateEnabled(bool requested) noexcept;
+    void SetBgmGateDivisor(u32 requested) noexcept;
 
     [[nodiscard]] static constexpr bool IsGateHookAddress(u32 address) noexcept
     {
@@ -116,7 +116,7 @@ private:
     const u8* GetGuestRange(u32 address, u32 size) const;
     void ClearPlayer(u32 player);
     [[nodiscard]] u32 AdvanceGateEpoch() noexcept;
-    [[nodiscard]] u32 PublishGateEnabled(bool enabled) noexcept;
+    [[nodiscard]] u32 PublishGateDivisor(u32 divisor) noexcept;
     static void SynchronizeGatePhase(GatePhaseState& phase, u32 gateState) noexcept;
     void ResetGatePhases(u32 gateState) noexcept;
     [[nodiscard]] bool HandleSeqPlayerGate();

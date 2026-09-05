@@ -49,27 +49,34 @@ constexpr u32 ExChannelBase = 0x03809FBC;
 constexpr u32 ExChannelStride = 0x54;
 constexpr u32 ExChannelCount = 16;
 
-constexpr u32 GateEnabledMask = 1;
-constexpr u32 GateEpochMask = 0x7FFFFFFF;
+constexpr u32 GateDivisorBits = 3;
+constexpr u32 GateDivisorMask = 0x7;
+constexpr u32 GateEpochMask = 0x1FFFFFFF;
 
-constexpr u32 PackGateState(u32 epoch, bool enabled) noexcept
+constexpr u32 SanitizeGateDivisor(u32 divisor) noexcept
 {
-    return ((epoch & GateEpochMask) << 1) | (enabled ? GateEnabledMask : 0);
+    return divisor >= 2 && divisor <= 4 ? divisor : 0;
 }
 
-constexpr bool GateStateEnabled(u32 state) noexcept
+constexpr u32 PackGateState(u32 epoch, u32 divisor) noexcept
 {
-    return (state & GateEnabledMask) != 0;
+    return ((epoch & GateEpochMask) << GateDivisorBits)
+        | SanitizeGateDivisor(divisor);
+}
+
+constexpr u32 GateStateDivisor(u32 state) noexcept
+{
+    return state & GateDivisorMask;
 }
 
 constexpr u32 GateStateEpoch(u32 state) noexcept
 {
-    return state >> 1;
+    return state >> GateDivisorBits;
 }
 
-constexpr u32 NextGateState(u32 state, bool enabled) noexcept
+constexpr u32 NextGateState(u32 state, u32 divisor) noexcept
 {
-    return PackGateState(GateStateEpoch(state) + 1, enabled);
+    return PackGateState(GateStateEpoch(state) + 1, divisor);
 }
 
 constexpr bool GateEpochChanged(u32 observedEpoch, u32 state) noexcept
@@ -82,22 +89,39 @@ constexpr u8 GatePhaseAfterObservation(u32 observedEpoch, u8 phase, u32 state) n
     return GateEpochChanged(observedEpoch, state) ? 0 : phase;
 }
 
-constexpr u32 GateTestOffN = PackGateState(7, false);
-constexpr u32 GateTestOnN1 = NextGateState(GateTestOffN, true);
-constexpr u32 GateTestOffN2 = NextGateState(GateTestOnN1, false);
-constexpr u32 GateTestOnN3 = NextGateState(GateTestOffN2, true);
-static_assert(!GateStateEnabled(GateTestOffN));
-static_assert(GateStateEnabled(GateTestOnN1));
-static_assert(!GateStateEnabled(GateTestOffN2));
-static_assert(GateStateEnabled(GateTestOnN3));
-static_assert(GateStateEpoch(GateTestOnN1) == 8);
-static_assert(GateStateEpoch(GateTestOffN2) == 9);
-static_assert(GateStateEpoch(GateTestOnN3) == 10);
-static_assert(GateEpochChanged(GateStateEpoch(GateTestOffN), GateTestOnN1));
-static_assert(GatePhaseAfterObservation(7, 1, GateTestOnN1) == 0);
-static_assert(GatePhaseAfterObservation(8, 1, GateTestOffN2) == 0);
-static_assert(GatePhaseAfterObservation(9, 1, GateTestOnN3) == 0);
-static_assert(GatePhaseAfterObservation(10, 1, GateTestOnN3) == 1);
+constexpr u32 GateTestOffN = PackGateState(7, 0);
+constexpr u32 GateTestX2N1 = NextGateState(GateTestOffN, 2);
+constexpr u32 GateTestX2ResetN2 = NextGateState(
+    GateTestX2N1, GateStateDivisor(GateTestX2N1));
+constexpr u32 GateTestX3N3 = NextGateState(GateTestX2ResetN2, 3);
+constexpr u32 GateTestX4N4 = NextGateState(GateTestX3N3, 4);
+constexpr u32 GateTestOffN5 = NextGateState(GateTestX4N4, 0);
+static_assert(SanitizeGateDivisor(0) == 0);
+static_assert(SanitizeGateDivisor(1) == 0);
+static_assert(SanitizeGateDivisor(2) == 2);
+static_assert(SanitizeGateDivisor(3) == 3);
+static_assert(SanitizeGateDivisor(4) == 4);
+static_assert(SanitizeGateDivisor(5) == 0);
+static_assert(GateStateDivisor(GateTestOffN) == 0);
+static_assert(GateStateDivisor(GateTestX2N1) == 2);
+static_assert(GateStateDivisor(GateTestX2ResetN2) == 2);
+static_assert(GateStateDivisor(GateTestX3N3) == 3);
+static_assert(GateStateDivisor(GateTestX4N4) == 4);
+static_assert(GateStateDivisor(GateTestOffN5) == 0);
+static_assert(GateStateEpoch(GateTestX2N1) == 8);
+static_assert(GateStateEpoch(GateTestX2ResetN2) == 9);
+static_assert(GateStateEpoch(GateTestX3N3) == 10);
+static_assert(GateStateEpoch(GateTestX4N4) == 11);
+static_assert(GateStateEpoch(GateTestOffN5) == 12);
+static_assert(PackGateState(7, 0) != PackGateState(7, 2));
+static_assert(PackGateState(7, 2) != PackGateState(7, 3));
+static_assert(PackGateState(7, 3) != PackGateState(7, 4));
+static_assert(GateEpochChanged(GateStateEpoch(GateTestOffN), GateTestX2N1));
+static_assert(GatePhaseAfterObservation(8, 1, GateTestX2ResetN2) == 0);
+static_assert(GatePhaseAfterObservation(9, 1, GateTestX3N3) == 0);
+static_assert(GatePhaseAfterObservation(10, 1, GateTestX4N4) == 0);
+static_assert(GatePhaseAfterObservation(11, 1, GateTestOffN5) == 0);
+static_assert(GatePhaseAfterObservation(12, 1, GateTestOffN5) == 1);
 
 constexpr std::array<u8, 32> ExpectedROMSHA256 {
     0x0A, 0x7D, 0x6E, 0x87, 0xD9, 0x87, 0x8C, 0x2F,
@@ -182,7 +206,6 @@ PokemonWhiteAudioClassifier::PokemonWhiteAudioClassifier(melonDS::NDS& nds) noex
 
 void PokemonWhiteAudioClassifier::Initialize(const NDSCart::CartCommon* cart)
 {
-    SetBgmGateEnabled(false);
     Enabled = false;
     Cache.clear();
     ResetRuntime();
@@ -304,19 +327,20 @@ u32 PokemonWhiteAudioClassifier::AdvanceGateEpoch() noexcept
     u32 state = GateState.load(std::memory_order_relaxed);
     while (true)
     {
-        const u32 newState = NextGateState(state, GateStateEnabled(state));
+        const u32 newState = NextGateState(state, GateStateDivisor(state));
         if (GateState.compare_exchange_weak(
                 state, newState, std::memory_order_release, std::memory_order_relaxed))
             return newState;
     }
 }
 
-u32 PokemonWhiteAudioClassifier::PublishGateEnabled(bool enabled) noexcept
+u32 PokemonWhiteAudioClassifier::PublishGateDivisor(u32 divisor) noexcept
 {
+    divisor = SanitizeGateDivisor(divisor);
     u32 state = GateState.load(std::memory_order_relaxed);
-    while (GateStateEnabled(state) != enabled)
+    while (GateStateDivisor(state) != divisor)
     {
-        const u32 newState = NextGateState(state, enabled);
+        const u32 newState = NextGateState(state, divisor);
         if (GateState.compare_exchange_weak(
                 state, newState, std::memory_order_release, std::memory_order_relaxed))
             return newState;
@@ -324,9 +348,9 @@ u32 PokemonWhiteAudioClassifier::PublishGateEnabled(bool enabled) noexcept
     return state;
 }
 
-void PokemonWhiteAudioClassifier::SetBgmGateEnabled(bool requested) noexcept
+void PokemonWhiteAudioClassifier::SetBgmGateDivisor(u32 requested) noexcept
 {
-    static_cast<void>(PublishGateEnabled(requested && Enabled));
+    static_cast<void>(PublishGateDivisor(requested));
 }
 
 void PokemonWhiteAudioClassifier::SynchronizeGatePhase(
@@ -352,7 +376,8 @@ void PokemonWhiteAudioClassifier::ResetGatePhases(u32 gateState) noexcept
 bool PokemonWhiteAudioClassifier::HandleSeqPlayerGate()
 {
     const u32 gateState = GateState.load(std::memory_order_acquire);
-    if (!GateStateEnabled(gateState) || NDS.ARM7.R[10] == 0)
+    const u32 divisor = GateStateDivisor(gateState);
+    if (divisor == 0 || NDS.ARM7.R[10] == 0)
         return false;
 
     const u32 playerAddress = NDS.ARM7.R[5];
@@ -375,10 +400,10 @@ bool PokemonWhiteAudioClassifier::HandleSeqPlayerGate()
         return false;
 
     gatePhase.Phase++;
-    if (gatePhase.Phase < 2)
+    if (gatePhase.Phase < divisor)
         return true;
 
-    gatePhase.Phase -= 2;
+    gatePhase.Phase -= divisor;
     return false;
 }
 
@@ -442,7 +467,7 @@ void PokemonWhiteAudioClassifier::HandleExChannelLoop()
     if (channel >= ExChannelCount)
         return;
 
-    if (!GateStateEnabled(gateState) || ExChannelMainUpdate == 0)
+    if (GateStateDivisor(gateState) == 0 || ExChannelMainUpdate == 0)
         return;
 
     u32 ownerPlayer = 0;
