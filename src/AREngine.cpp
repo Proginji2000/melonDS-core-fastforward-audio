@@ -21,6 +21,7 @@
 #include "NDS.h"
 #include "DSi.h"
 #include "AREngine.h"
+#include "ARCodeValidator.h"
 #include "Platform.h"
 
 namespace melonDS
@@ -39,9 +40,23 @@ AREngine::AREngine(melonDS::NDS& nds) : NDS(nds)
     case ((x)+0x08): case ((x)+0x09): case ((x)+0x0A): case ((x)+0x0B): \
     case ((x)+0x0C): case ((x)+0x0D): case ((x)+0x0E): case ((x)+0x0F)
 
-void AREngine::RunCheat(const ARCode& arcode)
+void AREngine::RunCheat(ARCode& arcode)
 {
-    const u32* code = &arcode.Code[0];
+    if (arcode.Code.empty())
+    {
+        Log(LogLevel::Warn, "ActionReplay: rejected empty code\n");
+        arcode.Enabled = false;
+        return;
+    }
+    if ((arcode.Code.size() & 1) != 0)
+    {
+        Log(LogLevel::Warn, "ActionReplay: rejected odd word count %zu\n", arcode.Code.size());
+        arcode.Enabled = false;
+        return;
+    }
+
+    const u32* code = arcode.Code.data();
+    const u32* codeend = code + arcode.Code.size();
 
     u32 offset = 0;
     u32 datareg = 0;
@@ -55,17 +70,37 @@ void AREngine::RunCheat(const ARCode& arcode)
 
     // TODO: does anything reset this??
     u32 c5count = 0;
+    std::size_t instructionIndex = 0;
 
     for (;;)
     {
-        if (code > &arcode.Code[arcode.Code.size() - 1])
-            // If the instruction pointer is past the end of the cheat code...
+        if (code == codeend)
             break;
 
         u32 a = *code++;
         u32 b = *code++;
+        instructionIndex++;
 
         u8 op = a >> 24;
+        std::size_t payloadWords = 0;
+        if ((op & 0xF0) == 0xE0)
+        {
+            payloadWords = ARCodePayloadWordCount(b);
+            const std::size_t availableWords = static_cast<std::size_t>(codeend - code);
+            if (payloadWords > availableWords)
+            {
+                Log(
+                    LogLevel::Warn,
+                    "ActionReplay: truncated E payload at instruction %zu "
+                    "(%u bytes requested, %zu available)\n",
+                    instructionIndex,
+                    b,
+                    availableWords * sizeof(u32)
+                );
+                arcode.Enabled = false;
+                return;
+            }
+        }
 
         if ((op < 0xD0 && op != 0xC5) || op > 0xD2)
         {
@@ -73,8 +108,7 @@ void AREngine::RunCheat(const ARCode& arcode)
             {
                 if ((op & 0xF0) == 0xE0)
                 {
-                    for (u32 i = 0; i < b; i += 8)
-                        code += 2;
+                    code += payloadWords;
                 }
 
                 continue;
@@ -421,7 +455,7 @@ void AREngine::RunCheats()
 {
     if (Cheats.empty()) return;
 
-    for (const ARCode& code : Cheats)
+    for (ARCode& code : Cheats)
     {
         if (code.Enabled)
             RunCheat(code);

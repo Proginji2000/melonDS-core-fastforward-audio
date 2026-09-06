@@ -34,7 +34,7 @@ public:
 private:
     friend class ARM;
     void RunCheats();
-    void RunCheat(const ARCode& arcode);
+    void RunCheat(ARCode& arcode);
 
     melonDS::NDS& NDS;
 };
